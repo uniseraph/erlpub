@@ -1,0 +1,13 @@
+{application, erlpub,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+		  cowboy
+                 ]},
+  {mod, { erlpub_app, []}},
+  {env, []}
+ ]}.
