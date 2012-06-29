@@ -19,7 +19,7 @@
 -include_lib("amqp_client/include/amqp_client.hrl").
 -include_lib("cowboy/include/http.hrl").
 
--record(state,{channel=undefined,noreply=true,ref}).
+-record(state,{channel=undefined,ref}).
 %%
 %% API Functions
 %%
@@ -46,7 +46,7 @@ init({_Any, http}, Req, []) ->
 	case  amqp_connection_pool:get()    of
 		{error ,Reason} ->
 			{ok,Req7} =cowboy_http_req:reply(200, [] ,  ["publish error ,no connection to rabbitmq.\r\n" ] , Req6   ),
-			{shutdown , Req7, #state{noreply=false} };
+			{shutdown , Req7, #state{} };
 		Connection ->
 
    				{ok , Channel} = amqp_connection:open_channel(Connection),
@@ -73,27 +73,28 @@ init({_Any, http}, Req, []) ->
        			
 				amqp_channel:call(Channel,Publish,Msg),
 
-				{ loop , Req6 , #state{channel=Channel,ref=Ref} ,500 } 
+				{ loop , Req6 , #state{channel=Channel,ref=Ref} } 
 	end.
 
 info({'DOWN', Ref, Channel , Channel, Info} , Req , State=#state{ref=Ref , channel=Channel} ) ->
 	error_logger:info_msg("~p recving a channel:~p die message because of ~p~n", [self(), Channel , Info]) ,
-	
-	{ok , Req , State#state{channel=undefined} };
+	{ok,Req1} =cowboy_http_req:reply(200, [] ,  ["publish error, no confirm \r\n" ] , Req   ),
+
+	{ok , Req1 , State#state{channel=undefined} };
 
 info( { #'basic.return'{reply_code=_ReplyCode,reply_text=ReplyText} , _ } = Message  ,  Req , State ) ->
 	error_logger:info_msg("~p recving a message ~p~n", [self(), Message]) ,
 	{ok,Req2} =cowboy_http_req:reply(200, [] ,  ["publish error ," , ReplyText , "\r\n" ] , Req   ),
-	{ok , Req2 , State#state{noreply=false} };
+	{ok , Req2 , State };
 
-info( #'basic.ack'{delivery_tag=1,multiple=false}=Message, Req,State)->
+info( #'basic.ack'{delivery_tag=_Seq,multiple=false}=Message, Req,State)->
 	error_logger:info_msg("~p recving a message ~p~n", [self(), Message]) ,
 	{ok,Req2} =cowboy_http_req:reply(200, [] ,  ["publish success \r\n" ] , Req   ),
-	{ok , Req2 , State#state{noreply=false} };
+	{ok , Req2 , State };
 info( #'basic.nack'{}=Message, Req,State)->
 	error_logger:info_msg("~p recving a message ~p~n", [self(), Message]) ,
 	{ok,Req2} =cowboy_http_req:reply(200, [] ,  ["publish error, no confirm \r\n" ] , Req   ),
-	{ok , Req2 , State#state{noreply=false} };
+	{ok , Req2 , State };
 
 info(Message , Req, State) ->
 	error_logger:info_msg("~p recving a message ~p~n", [self(), Message]) ,
@@ -103,15 +104,16 @@ info(Message , Req, State) ->
 
 
 
-terminate(Req=#http_req{resp_state=_RespState}, 
-		#state{channel=Channel  , noreply =NoReply }) ->
-    case   NoReply of 
-		true ->
-			 %greate hack
-	 	 cowboy_http_req:reply(200, [],	<< "publish success\r\n" >>, Req#http_req{resp_state=waiting}) ;
-		false ->
-			ok
-	end,
+terminate(_Req=#http_req{resp_state=_RespState}, 
+		#state{channel=Channel,ref=Ref }) ->
+%%     case   NoReply of 
+%% 		true ->
+%% 			 %greate hack
+%% 	 	 cowboy_http_req:reply(200, [],	<< "publish success\r\n" >>, Req#http_req{resp_state=waiting}) ;
+%% 		false ->
+%% 			ok
+%% 	end,
+	erlang:demonitor(Ref),
 	case Channel of
 		undefined ->
 			ok;
