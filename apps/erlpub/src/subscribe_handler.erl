@@ -33,20 +33,25 @@ init({_Any, http}, Req=#http_req{socket=Socket}, []) ->
 	
 	{SubKey    , Req1} = cowboy_http_req:binding(sub_key   , Req),
 	{ChannelName   , Req2} = cowboy_http_req:binding(channel   , Req1),
-	{Callback  , Req3} = cowboy_http_req:binding(callback  , Req2),
+	{_Callback  , Req3} = cowboy_http_req:binding(callback  , Req2),
 	{Timetoken , Req4} = cowboy_http_req:binding(timetoken , Req3),
 	
 	
 	case  amqp_connection_pool:get()    of
 		{error ,Reason} ->
+			error_logger:error_msg("get rabbitmq error ,because of ~p.~n",[Reason]),
 			{ok,Req5} =cowboy_http_req:reply(200, [] ,  ["publish error ,no connection to rabbitmq.\r\n" ] , Req4   ),
 			{shutdown , Req5, #state{} };
 		Connection ->
 			try
 				case Timetoken of
-					0 ->
+					<<"0">> ->
 						% query from db
-						{shutdown , Req4 , #state{}};
+						%% Initial Response ---  [[],"9718304464409"]
+						
+						{ok,Req5} =cowboy_http_req:reply(200, [] , 
+								 [  "[[],\"" ,  <<"9718304464409">> , "\"]" ] , Req4   ),
+						{shutdown , Req5 , #state{}};
 					_ ->
 						{ok , Channel} = amqp_connection:open_channel(Connection),
 
